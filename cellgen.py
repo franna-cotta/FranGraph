@@ -41,11 +41,12 @@ def iterateRidges(ridges):
             for edge in closedPairwise(ridge):
                 yield edge            
 
+# Extends the SciPy Voronoi class to add periodic boundary conditions by taking the input points, capturing those adjacent to the faces of the bounding hypercube, and duplicating them on the opposite face
 class periodicVoronoi(sp.spatial.Voronoi):
     def __init__(self, points, 
                  bounds = None, # Specified as a pair of vectors denoting the lower-left and upper-right corners of the bounding region or equivalent
-                 L = None, # Specfied as a float, calculated from the bounds if not given
-                 periodicIn = None,
+                 L = None, # Width of the buffer region around the border hypercube within which points are considered 'border points. Specfied as a float, calculated from the bounds if not given.
+                 periodicIn = None, # Specifies which dimensions the Voronoi diagram must be periodic in
                  furthest_site = False, incremental = False, qhull_options = None):
         
         dim = len(points[0])
@@ -87,7 +88,9 @@ class periodicVoronoi(sp.spatial.Voronoi):
             
         super().__init__(points, furthest_site = furthest_site, incremental = incremental, qhull_options = qhull_options)   
         
-
+# A power diagram is a weighted d-dimensional Voronoi diagram 
+# We use an algorithm that generates a (d+1)-dimensional Voronoi diagram with the weights as the additional dimension
+# Then projects the completed (d+1)-dimensional cells back down to a d-dimensional structure
 class powerDiagram():
     def __init__(self, points, weights, bounds = None, periodicIn = None):
         if len(points) != len(weights):
@@ -243,7 +246,8 @@ class powerDiagram():
                 # Polytopal ridge, the intersection with the plane is a bounded polygon
                 # If we're dealing with a 2D power diagram, we can disregard this and reconstruct it with an UndirectedGraph clas
                 new_verts = list()
-                
+
+                # TO DO but not high priority
                 for i1, i2 in closedPairwise(ridge):
                     if i1 == -1 or i2 == -1:
                         # If either of the points are a -1 we have to skip it
@@ -317,143 +321,6 @@ class powerDiagram():
         plt.clf()
         
         return plt
-                
-        #self.graph = UndirectedGraph(node_coordinates = self._vertices, edge_indices = self._edges)
-
-
-"""class powerDiagram():
-    # Constructs a power diagram of dimension d
-    TOP = True
-    BTM = False
-    
-    # Transformation to map a sphere (z, r) onto a hyperplane
-    # z is a numpy array of shape (?, 1)
-    # r is a scalar
-    def _PI(self, z, r): 
-        return lambda x : 2*np.dot(x, z) - np.dot(z, z) + r**2
-    
-    def _DEL(self, z, r):
-        # PI(s) : x_{d+1} = 2 x.z - z.z - r^2
-        #                 = 2 (x1 z1 + ... + xd zd) + [r^2 - (z1 z1 + ... + zd zd)]
-        # ==> a1 = 2 z1, a2 = 2 z2, ..., ad = 2zd, a{d+1} = r^2 - (z1 z1 + ... + zd zd)
-        # ==> DEL(PI(s)) = (z1, z2, ..., zd, z.z - r^2)
-        
-        return np.append(z, (np.dot(z, z) - r**2))
-    
-    def __init__(self, points, radii):
-        self._dim = len(points[0])
-        
-        # Computes the d+1 dimensional hyperplane functions x_{d+1} = PI(s)(x)
-        self._hyperplanes = [self._PI(z, r) for z, r in zip(points, radii)]
-        
-        # Computes a d+1-dimensional pole associated with each hyperplane
-        self._poles = [self._DEL(z, r) for z, r in zip(points, radii)]
-    
-        # Constructs a covex hull around the poles
-        # The convex hull here represents the body created by intersecting all the hyperplanes
-        self._CH = sp.spatial.ConvexHull(self._poles)
-        self._polarity = list((False,)*len(self._CH.simplices))
-        
-        for simplex in self._CH.simplices:
-            # Simplices are the d-cells (for a CH in d+1 dimensions) where we have used the weights of the spheres
-            # to lift the problem into d+1 dimensions
-            # 2D: line segments (1-cells)
-            # 3D: triangles (2-cells)
-            # 4D: tetrahedra (3-cells)
-            # etc...
-            
-            pass """       
-        
-
-"""class weightedVoronoi():
-    def __init__(self, points, weights):
-        if len(points) != len(weights):
-            raise Exception("Number of points and weights must match")
-
-        
-        self._dim = len(points[0])
-        self._points = np.array(points, dtype = 'float64')
-        self._weights = np.array(weights, dtype = 'float64')
-        
-        C = 1.0 + max(weights)
-    
-        # Lift the points to higher dimensional space
-        # https://stackoverflow.com/questions/16024428/reference-algorithm-for-weighted-voronoi-diagrams
-        self._HDpts = [p + (np.sqrt(C - w),) for p, w in zip(points, weights)]
-
-        # Fill the empty variables
-        self.regenerate()
-
-    @property
-    def points(self):
-        return self._points
-
-    @property
-    def vertices(self):
-        return self._vertices
-        # Return the vertices of the higher-dimensional voronoi structure with the extra dimensions trimmed out
-        #return self._HDVoronoi.vertices[:,:self._dim]
-        #return sp.spatial.Voronoi(self.points).vertices
-    
-    def regenerate(self):
-        # Define a higher-dimensional voronoi structure
-        vor = sp.spatial.Voronoi(self._HDpts, qhull_options = "Qbb Qc Qz Qx")
-        
-        ridge_vertices = list()
-        pts_to_keep = list()
-        
-        # For each cell in the higher-dimensional voronoi complex
-        for region in vor.regions:
-            # Project the coords of the cell vertices down to the lower dimensions
-            coords = vor.vertices[region][:,:self._dim]
-            
-            # Generate the convex hull
-            if len(coords) > 2:
-                hull = sp.spatial.ConvexHull(coords)
-            
-                # Define the ridge vertices
-                for edge in hull.simplices:
-                    if tuple(edge) not in ridge_vertices and tuple(edge[::-1]) not in ridge_vertices:
-                        ridge_vertices.append(tuple(edge))
-                    
-        # For any point that is not a ridge vertex, nullify it
-        for idx in range(len(vor.vertices)):
-            if idx in pts_to_keep:
-                continue
-                
-            else:
-                for edge in ridge_vertices:
-                    if idx in edge:
-                        pts_to_keep.append(idx)
-                        break
-                    
-        self._vertices = list((0.0,)*len(vor.vertices))
-        
-        for idx in range(len(vor.vertices)):
-            if idx not in pts_to_keep:
-                #print(f"Index {idx} not found")
-                self._vertices[idx] = np.array((0.0,)*self._dim)
-            else:
-                self._vertices[idx] = vor.vertices[idx,:self._dim]
-                
-            
-            
-            # Print the borders
-            #print(hull.points[hull.simplices])
-        self.regions = vor.regions
-        self.ridge_vertices = ridge_vertices
-        self.ridge_points = list()
-        self.point_region = vor.point_region
-        self.furthest_site = vor.furthest_site
-        self._vertices = vor.vertices[:,:self._dim]"""
-        
-        
-"""# Redirect everything else
-        self.ridge_points = self._HDVoronoi.ridge_points
-        self.ridge_vertices = self._HDVoronoi.ridge_vertices
-        self.regions = self._HDVoronoi.regions
-        self.point_region = self._HDVoronoi.point_region
-        self.furthest_site = self._HDVoronoi.furthest_site"""
 
         
 
